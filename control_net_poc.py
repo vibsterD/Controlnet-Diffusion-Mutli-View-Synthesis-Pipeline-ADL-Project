@@ -15,9 +15,9 @@ import os
 
 import numpy as np
 
-torch.cuda.set_device(3)
+# torch.cuda.set_device(3)
 
-with open("/raid/home/vibhu20150/Datasets/IIITD-20K/Filtered.json", "rb") as f:
+with open("./Filtered.json", "rb") as f:
     prompt_data = json.load(fp=f)
 
 print(prompt_data['0']['Image ID'])
@@ -33,7 +33,7 @@ cond_pose_images = []
 
 openpose = OpenposeDetector.from_pretrained("lllyasviel/ControlNet")
 
-dataset_address_prefix = "/raid/home/vibhu20150/Datasets/IIITD-20K/IIITD-20K/"
+dataset_address_prefix = "./IIITD-20K/"
 
 
 for i in range(1):
@@ -73,7 +73,7 @@ generator = torch.manual_seed(0)
 
 pipe_I2I = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
     model_id, controlnet=controlnet, torch_dtype=torch.float16, safety_checker=None
-).to("cuda:3")
+)
 
 pipe_I2I.scheduler = UniPCMultistepScheduler.from_config(pipe_I2I.scheduler.config)
 pipe_I2I.enable_model_cpu_offload()
@@ -89,20 +89,24 @@ for i in range(1):
     gen_images = [ torch.permute(im, (2, 0, 1)).unsqueeze(0) for im in gen_images]
     print(gen_images[0].shape)
     print(len(gen_images))
-    # prompt_image = torch.permute(torch.tensor(np.array(images[i].resize((gen_images[-1].shape[-1], gen_images[-1].shape[-2])))), (2,0,1)).unsqueeze(0)
-    # pose_image = torch.permute(torch.tensor(np.array(cond_pose_images[i].resize((gen_images[-1].shape[-1], gen_images[-1].shape[-2])))), (2,0,1)).unsqueeze(0)
-    # gen_images.extend([prompt_image, pose_image])
+    prompt_image = torch.permute(torch.tensor(np.array(images[i].resize((gen_images[-1].shape[-1], gen_images[-1].shape[-2])))), (2,0,1)).unsqueeze(0)
+    pose_image = torch.permute(torch.tensor(np.array(cond_pose_images[i].resize((gen_images[-1].shape[-1], gen_images[-1].shape[-2])))), (2,0,1)).unsqueeze(0)
+    gen_images.extend([prompt_image, pose_image])
 
     print([im.shape for im in gen_images])
 
-    # torchvision.utils.save_image(torch.cat(gen_images), "./vis/i.png")
+    # torchvision.utils.save_image(torch.cat(gen_images), f"./vis/{i}.png")
+
+
 
     grid = torchvision.utils.make_grid(torch.cat(gen_images))
-    ndarr = grid * 255
+    ndarr = grid
+    # ndarr = ndarr.add_(0.5).clamp_(0, 255)
     ndarr = ndarr.to("cpu", torch.uint8).numpy()
-    print(type(ndarr))
+    ndarr = ndarr.transpose((1,2,0))
+    print(type(ndarr), ndarr.shape)
     im = Image.fromarray(ndarr)
-    im.save("./vis/i.png")
+    im.save(f"./vis/{i}.png")
 
     
 
