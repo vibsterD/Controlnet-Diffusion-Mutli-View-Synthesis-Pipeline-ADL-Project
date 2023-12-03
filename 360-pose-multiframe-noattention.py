@@ -71,23 +71,53 @@ def load_pose_frames_360(height: int, width: int):
     return pose_images_cropped
 
 
+def paste_images_horizontally(images: list[Image.Image]) -> Image.Image:
+    if len(images) < 1:
+        raise ValueError("images list should contain more than one image")
+
+    width = 0
+    height = 0
+    for im in images:
+        height = max(height, im.size[1])
+        width += im.size[0]
+
+    new_image = Image.new(images[0].mode, (width, height))
+
+    x_offset = 0
+
+    for im in images:
+        new_image.paste(im, (x_offset, 0))
+        x_offset += im.size[0]
+
+    new_image.save(SAVE_DIR + 'test.png')
+
+    return new_image
+
+
 def main():
     prompt_data = load_IIITD_dataset_json()
 
     print("First image ID:", prompt_data["0"]["Image ID"])
 
-    height = 695
-    width = 248
+    NUM_FRAMES_PER_GEN = 3
+    NUM_IMAGES_TO_PARSE = 1
+
+
+    HEIGHT = 695
+    WIDTH = 249*NUM_FRAMES_PER_GEN
+
+    assert WIDTH%NUM_FRAMES_PER_GEN == 0
 
     images = []
-    cond_pose_images = load_pose_frames_360(height, width)
+    cond_pose_images = load_pose_frames_360(HEIGHT, WIDTH)
     prompts = []
 
     negative_prompts = [
         "cartoonish, unrealistic, bad anatomy, worst quality, low quality"
     ]
 
-    NUM_IMAGES_TO_PARSE = 1
+	
+
     for img_num in range(NUM_IMAGES_TO_PARSE):
         jpeg_url = (
             f"{IIITD_DATASET_PREFIX}/IIITD-20K/"
@@ -109,7 +139,8 @@ def main():
             exit(1)
 
         image = Image.open(image_path)
-        image = image.resize((width, height))
+        image = image.resize((WIDTH//NUM_FRAMES_PER_GEN, HEIGHT))
+        image = paste_images_horizontally([image for i in range(NUM_FRAMES_PER_GEN)])
         images.append(image)
         prompts.append(prompt_data[str(img_num)]["Description 1"])
 
@@ -120,25 +151,30 @@ def main():
     ]  # NUM_IMAGES_TO_PARSE * angles
 
     for img_num in range(NUM_IMAGES_TO_PARSE):
-        for angle in range(len(cond_pose_images)):
+        for angle in range(0, len(cond_pose_images), NUM_FRAMES_PER_GEN):
+            control_image = paste_images_horizontally([cond_pose_images[i] for i in range(angle, angle+NUM_FRAMES_PER_GEN)])
+
             gen_images = pipe_I2I(
                 prompt=[prompts[img_num]],
                 negative_prompt=negative_prompts,
-                control_image=cond_pose_images[angle],
+                # control_image=cond_pose_images[angle],
+                control_image=control_image,
                 image=generated_images_per_angle[img_num][-1]
                 if len(generated_images_per_angle[img_num]) > 0
                 else images[img_num],
                 generator=generator,
-                height=height,
-                width=width,
+                height=HEIGHT,
+                width=WIDTH,
             )
 
             generated_images_per_angle[img_num].append(gen_images.images[0])
 
             gen_images = [torch.tensor(np.array(im)) for im in gen_images.images]
+
             gen_images = [
                 torch.permute(im, (2, 0, 1)).unsqueeze(0) for im in gen_images
             ]
+
             prompt_image = torch.permute(
                 torch.tensor(
                     np.array(
@@ -151,23 +187,21 @@ def main():
                 ),
                 (2, 0, 1),
             ).unsqueeze(0)
+
+
             pose_image = torch.permute(
                 torch.tensor(
                     np.array(
-                        cond_pose_images[angle].resize(
+                        control_image.resize(
                             (gen_images[-1].shape[-1], gen_images[-1].shape[-2])
                         ).convert("RGB")
                     )
                 ),
                 (2, 0, 1),
             ).unsqueeze(0)
-            print(np.array(
-                        cond_pose_images[angle].resize(
-                            (gen_images[-1].shape[-1], gen_images[-1].shape[-2])
-                        )).shape)
+
             gen_images.extend([prompt_image, pose_image])
-            print(cond_pose_images[angle])
-            print([im.shape for im in gen_images])
+
 
             grid = torchvision.utils.make_grid(torch.cat(gen_images))
             ndarr = grid
@@ -178,9 +212,8 @@ def main():
 
             im.save(SAVE_DIR + f"img_{img_num}_angle_{angle}.png")
 
-            # gen_images.images[0].save(
-            # f"./360_vid_images/img_{img_num}_angle_{angle}.png"
-            # )
+
+
 
 
 if __name__ == "__main__":
