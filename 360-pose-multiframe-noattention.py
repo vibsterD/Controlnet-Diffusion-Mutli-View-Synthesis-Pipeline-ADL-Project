@@ -16,10 +16,10 @@ import os
 
 import numpy as np
 
-# IIITD_DATASET_PREFIX = "/raid/home/vibhu20150/Datasets/IIITD-20K/"
-IIITD_DATASET_PREFIX = "./data/IIITD-20K/"
-SAVE_DIR = "./360_vid_images_mac/"
-# SAVE_DIR = "./360_vid_images/"
+IIITD_DATASET_PREFIX = "/raid/home/vibhu20150/Datasets/IIITD-20K/"
+# IIITD_DATASET_PREFIX = "./data/IIITD-20K/"
+# SAVE_DIR = "./360_vid_images_mac/"
+SAVE_DIR = "./360_vid_images/"
 
 def make_pipeline(generator_seed: int = 0):
     controlnet = ControlNetModel.from_pretrained(
@@ -89,7 +89,7 @@ def paste_images_horizontally(images: list[Image.Image]) -> Image.Image:
         new_image.paste(im, (x_offset, 0))
         x_offset += im.size[0]
 
-    new_image.save(SAVE_DIR + 'test.png')
+    # new_image.save(SAVE_DIR + 'test.png')
 
     return new_image
 
