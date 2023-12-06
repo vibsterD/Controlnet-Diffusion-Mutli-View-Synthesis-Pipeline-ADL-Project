@@ -7,7 +7,7 @@ from diffusers.utils import load_image
 
 from diffusers import ControlNetModel, UniPCMultistepScheduler
 # from diffusers import StableDiffusionControlNetImg2ImgPipeline
-from pipeline.pipeline_controlnet_img2img import StableDiffusionControlNetImg2ImgPipeline
+from pose_gen.pipeline.pipeline_controlnet_img2img import StableDiffusionControlNetImg2ImgPipeline
 import torch
 import torchvision
 
