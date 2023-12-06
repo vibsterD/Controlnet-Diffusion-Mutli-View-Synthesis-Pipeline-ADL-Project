@@ -245,10 +245,12 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
         mid_block_only_cross_attention: Optional[bool] = None,
         cross_attention_norm: Optional[str] = None,
         addition_embed_type_num_heads=64,
+        num_frames: int = 1
     ):
         super().__init__()
 
         self.sample_size = sample_size
+        self.num_frames = num_frames
 
         if num_attention_heads is not None:
             raise ValueError(
@@ -790,6 +792,7 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
         mid_block_additional_residual: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.Tensor] = None,
         return_dict: bool = True,
+        use_temporal_attn: bool = False,
     ) -> Union[UNet2DConditionOutput, Tuple]:
         r"""
         The [`UNet2DConditionModel`] forward method.
@@ -797,6 +800,7 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
         Args:
             sample (`torch.FloatTensor`):
                 The noisy input tensor with the following shape `(batch, channel, height, width)`.
+                If temporal then expected shape `(batch*num_frames, channel, height, width)`.
             timestep (`torch.FloatTensor` or `float` or `int`): The number of timesteps to denoise an input.
             encoder_hidden_states (`torch.FloatTensor`):
                 The encoder hidden states with shape `(batch, sequence_length, feature_dim)`.
@@ -818,6 +822,12 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
                 If `return_dict` is True, an [`~models.unet_2d_condition.UNet2DConditionOutput`] is returned, otherwise
                 a `tuple` is returned where the first element is the sample tensor.
         """
+
+        if use_temporal_attn:
+            batch_size = sample.shape[0]//self.num_frames
+        else:
+            batch_size = sample.shape[0]
+
         # By default samples have to be AT least a multiple of the overall upsampling factor.
         # The overall upsampling factor is equal to 2 ** (# num of upsampling layers).
         # However, the upsampling interpolation output size can be forced to fit any upsampling size
@@ -991,7 +1001,7 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
         is_adapter = mid_block_additional_residual is None and down_block_additional_residuals is not None
 
         down_block_res_samples = (sample,)
-        for downsample_block in self.down_blocks:
+        for i, downsample_block in enumerate(self.down_blocks):
             if hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention:
                 # For t2i-adapter CrossAttnDownBlock2D
                 additional_residuals = {}
@@ -1007,6 +1017,10 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
                     encoder_attention_mask=encoder_attention_mask,
                     **additional_residuals,
                 )
+
+                if use_temporal_attn:
+                    temporal_residual = self.down_temporal_attention_blocks[i](hidden_states=sample, num_frames=self.num_frames).sample
+
             else:
                 sample, res_samples = downsample_block(hidden_states=sample, temb=emb, scale=lora_scale)
 
