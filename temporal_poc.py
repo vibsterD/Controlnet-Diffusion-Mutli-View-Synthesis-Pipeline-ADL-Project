@@ -22,6 +22,8 @@ IIITD_DATASET_PREFIX = "/raid/home/vibhu20150/Datasets/IIITD-20K/"
 # IIITD_DATASET_PREFIX = "./data/IIITD-20K/"
 # SAVE_DIR = "./output/360_vid_images_mac/"
 SAVE_DIR = "./output/360_vid_images_temporal/"
+NUM_FRAMES_PER_GEN = 12
+
 
 def make_pipeline(generator_seed: int = 0):
     controlnet = ControlNetModel.from_pretrained(
@@ -47,7 +49,7 @@ def make_pipeline(generator_seed: int = 0):
     unet.load_state_dict(pipe_I2I.unet.state_dict(), strict=False)
 
     pipe_I2I.unet = unet
-    pipe_I2I.unet.num_frames = 3
+    pipe_I2I.unet.num_frames = NUM_FRAMES_PER_GEN
     print(type(pipe_I2I.unet))
     print()
 
@@ -118,7 +120,6 @@ def main():
 
     print("First image ID:", prompt_data["0"]["Image ID"])
 
-    NUM_FRAMES_PER_GEN = 3
     NUM_IMAGES_TO_PARSE = 1
 
 
