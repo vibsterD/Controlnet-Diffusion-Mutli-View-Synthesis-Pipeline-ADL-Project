@@ -99,6 +99,18 @@ class UNet2DConditionOutput(BaseOutput):
     sample: torch.FloatTensor = None
 
 
+class TemporalBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.transformer_temporal = TransformerTemporalModel(in_channels=in_channels, out_channels=out_channels)
+        self.zero_conv = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=1)
+        nn.init.zeros_(self.zero_conv.weight)
+
+    def forward(self, hidden_states, num_frames):
+        sample = self.transformer_temporal(hidden_states=hidden_states, num_frames=num_frames).sample
+        return self.zero_conv(sample)
+
+
 class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin):
     r"""
     A conditional 2D UNet model that takes a noisy sample, conditional state, and a timestep and returns a sample
@@ -251,6 +263,7 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
 
         self.sample_size = sample_size
         self.num_frames = num_frames
+        self.temporal_condition_scale = 1.0
 
         if num_attention_heads is not None:
             raise ValueError(
@@ -504,8 +517,11 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
             )
             self.down_blocks.append(down_block)
 
-            temporal_block = TransformerTemporalModel(in_channels=output_channel, out_channels=output_channel)
+            # temporal_block = TransformerTemporalModel(in_channels=output_channel, out_channels=output_channel)
+            # zero_conv = nn.Conv2d(in_channels=output_channel, out_channels=output_channel, kernel_size=1)
+            temporal_block = TemporalBlock(in_channels=output_channel, out_channels=output_channel)
             self.down_temporal_attention_blocks.append(temporal_block)
+            # self.down
 
 
         # mid
@@ -603,7 +619,9 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
             self.up_blocks.append(up_block)
             prev_output_channel = output_channel
 
-            temporal_block = TransformerTemporalModel(in_channels=output_channel, out_channels=output_channel)
+            # temporal_block = TransformerTemporalModel(in_channels=output_channel, out_channels=output_channel)
+            temporal_block = TemporalBlock(in_channels=output_channel, out_channels=output_channel)
+
             self.up_temporal_attention_blocks.append(temporal_block)
 
 
@@ -792,7 +810,7 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
         mid_block_additional_residual: Optional[torch.Tensor] = None,
         encoder_attention_mask: Optional[torch.Tensor] = None,
         return_dict: bool = True,
-        use_temporal_attn: bool = False,
+        use_temporal_attn: bool = True,
     ) -> Union[UNet2DConditionOutput, Tuple]:
         r"""
         The [`UNet2DConditionModel`] forward method.
@@ -822,6 +840,8 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
                 If `return_dict` is True, an [`~models.unet_2d_condition.UNet2DConditionOutput`] is returned, otherwise
                 a `tuple` is returned where the first element is the sample tensor.
         """
+
+        print("ASDASDASODNOASNDOANSODNASoid")
 
         if use_temporal_attn:
             batch_size = sample.shape[0]//self.num_frames
@@ -1019,15 +1039,34 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
                 )
 
                 if use_temporal_attn:
-                    temporal_residual = self.down_temporal_attention_blocks[i](hidden_states=sample, num_frames=self.num_frames).sample
+                    print("YPPPPOOOOOO", len(sample))
+                    temporal_residual = self.down_temporal_attention_blocks[i](hidden_states=sample, num_frames=self.num_frames)
+                    print("TEMPORAL SHAPE", temporal_residual.shape)
+                    sample += self.temporal_condition_scale * temporal_residual
+
 
             else:
                 sample, res_samples = downsample_block(hidden_states=sample, temb=emb, scale=lora_scale)
+                print("WHATTTTT")
+
+                if use_temporal_attn:
+                    print("YPPPPOOOOOO", len(sample))
+                    temporal_residual = self.down_temporal_attention_blocks[i](hidden_states=sample, num_frames=self.num_frames)
+                    print("TEMPORAL SHAPE", temporal_residual.shape)
+                    sample += self.temporal_condition_scale * temporal_residual
+
 
                 if is_adapter and len(down_block_additional_residuals) > 0:
                     sample += down_block_additional_residuals.pop(0)
 
+
             down_block_res_samples += res_samples
+
+            print("LENGTH", len(sample), len(res_samples))
+            print(sample.shape)
+            # print("SAMPlE RES TYPE", type(sample[0]), (res_samples[0]))
+            print("SAMPlE shape", [s.shape for s in sample])
+            print("RES shape", [s.shape for s in res_samples])
 
         if is_controlnet:
             new_down_block_res_samples = ()
@@ -1092,6 +1131,14 @@ class UNet2DConditionTemporalModel(ModelMixin, ConfigMixin, UNet2DConditionLoade
                     upsample_size=upsample_size,
                     scale=lora_scale,
                 )
+
+            if use_temporal_attn:
+                print("YPPPPOOOOOO", len(sample))
+                temporal_residual = self.up_temporal_attention_blocks[i](hidden_states=sample, num_frames=self.num_frames)
+                print("TEMPORAL SHAPE", temporal_residual.shape)
+                sample += self.temporal_condition_scale *  temporal_residual
+
+
 
         # 6. post-process
         if self.conv_norm_out:

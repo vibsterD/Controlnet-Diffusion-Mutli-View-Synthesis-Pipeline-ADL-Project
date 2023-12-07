@@ -224,6 +224,10 @@ class StableDiffusionControlNetImg2ImgTemporalAttnPipeline(
         )
         self.register_to_config(requires_safety_checker=requires_safety_checker)
 
+
+    def copy_pretrained_sd_unet_weights(self):
+        new_unet = UNet2DConditionTemporalModel()
+
     # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.enable_vae_slicing
     def enable_vae_slicing(self):
         r"""
@@ -1089,6 +1093,7 @@ class StableDiffusionControlNetImg2ImgTemporalAttnPipeline(
             torch.cuda.empty_cache()
 
         print("LATENT TYPE", type(latents))
+        print("UNET TYPE: ", type(self.unet)) 
 
         if not output_type == "latent":
             image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
