@@ -21,7 +21,7 @@ import numpy as np
 IIITD_DATASET_PREFIX = "/raid/home/vibhu20150/Datasets/IIITD-20K/"
 # IIITD_DATASET_PREFIX = "./data/IIITD-20K/"
 # SAVE_DIR = "./output/360_vid_images_mac/"
-SAVE_DIR = "./output/360_vid_images_temporal/"
+SAVE_DIR = "./output/360_vid_images_temporal_pre/"
 NUM_FRAMES_PER_GEN = 12
 
 
@@ -58,6 +58,48 @@ def make_pipeline(generator_seed: int = 0):
     
 
     return pipe_I2I, generator
+
+
+def load_pipeline(generator_seed: int = 0):
+    controlnet = ControlNetModel.from_pretrained(
+        "fusing/stable-diffusion-v1-5-controlnet-openpose", torch_dtype=torch.float16
+    )
+    model_id = "runwayml/stable-diffusion-v1-5"
+
+    generator = torch.manual_seed(generator_seed)
+
+    # pipe_I2I = StableDiffusionControlNetImg2ImgTemporalAttnPipeline()
+    
+    unet_path = "/raid/home/vibhu20150/litreview/ADL-Project/checkpoint_pose_temporal_v7/checkpoint-1600/unet"
+    unet = UNet2DConditionTemporalModel.from_pretrained(unet_path)
+    unet = unet.to(dtype=torch.float16)
+
+    pipe_I2I = StableDiffusionControlNetImg2ImgTemporalAttnPipeline.from_pretrained(
+        model_id, controlnet=controlnet, unet=unet, torch_dtype=torch.float16, safety_checker=None
+    )
+    print(type(pipe_I2I))
+    print(type(pipe_I2I.unet))
+    # unet = UNet2DConditionTemporalModel.from_config(pipe_I2I.unet.config)
+    # unet = unet.to(dtype=torch.float16)
+    print("UNET", type(unet))
+    print(unet.parameters())
+    # print([param for param in unet.parameters()])
+
+    # unet.load_state_dict(pipe_I2I.unet.state_dict(), strict=False)
+
+    # pipe_I2I.unet = unet
+    # pipe_I2I.unet.num_frames = NUM_FRAMES_PER_GEN
+    print(type(pipe_I2I.unet))
+    print(pipe_I2I.unet.num_frames)
+    print()
+
+    pipe_I2I.scheduler = UniPCMultistepScheduler.from_config(pipe_I2I.scheduler.config)
+    pipe_I2I.enable_model_cpu_offload()
+    
+
+    return pipe_I2I, generator
+
+
 
 
 def load_IIITD_dataset_json():
@@ -126,7 +168,7 @@ def main():
     HEIGHT = 695
     WIDTH = 249
 
-    assert WIDTH%NUM_FRAMES_PER_GEN == 0
+    # assert WIDTH%NUM_FRAMES_PER_GEN == 0
 
     images = []
     cond_pose_images = load_pose_frames_360(HEIGHT, WIDTH)
@@ -165,7 +207,8 @@ def main():
         images.append(image)
         prompts.append(prompt_data[str(img_num)]["Description 1"])
 
-    pipe_I2I, generator = make_pipeline()
+    # pipe_I2I, generator = make_pipeline()
+    pipe_I2I, generator = load_pipeline()
 
     generated_images_per_angle = [
         [] for _ in range(NUM_IMAGES_TO_PARSE)
@@ -174,6 +217,9 @@ def main():
     for img_num in range(NUM_IMAGES_TO_PARSE):
         for angle in range(0, len(cond_pose_images), NUM_FRAMES_PER_GEN):
             # control_image = paste_images_horizontally([cond_pose_images[i] for i in range(angle, angle+NUM_FRAMES_PER_GEN)])
+            if angle + NUM_FRAMES_PER_GEN >= len(cond_pose_images):
+                break
+            
             control_images = [cond_pose_images[i] for i in range(angle, angle+NUM_FRAMES_PER_GEN)]
 
             gen_images = pipe_I2I(
